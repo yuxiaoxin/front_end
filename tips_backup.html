@@ -1,0 +1,437 @@
+<template>
+  <a-layout style="height: 100vh; padding: 20px;">
+    <!-- 主体内容区域 -->
+    <a-layout>
+      <div class="fixed-tag">欢迎使用调度系统AI助手</div>
+      <a-layout-content style="flex: 1; overflow-y: auto; padding: 20px;">
+        <div v-for="(message, index) in messages" :key="index" class="message-box">
+          <div
+                  :class="[
+              'message-content',
+              'database-message',
+              message.role === 'user' ? 'user-message' : 'assistant-message',
+            ]"
+          >
+            <template v-if="message.role === 'user'">
+              {{ message.content }}
+            </template>
+            <template v-else>
+              <a-spin v-if="message.isLoading" class="loading-spinner" />
+              <div v-else>
+                <div v-if="message.content === '1'">
+                  <h3>表格数据</h3>
+                  <!-- 表格部分 -->
+                  <a-table
+                          :dataSource="tableData"
+                          :columns="tableColumns"
+                          bordered
+                          :scroll="{ x: 'max-content' }"
+                          style="width: 100%; margin-bottom: 20px;"
+                  />
+
+                  <h3 style="margin-top: 20px;">数据分析图表</h3>
+                  <div class="charts-container" style="display: flex; flex-direction: column; gap: 20px; width: 100%;">
+                    <!-- 柱状图 -->
+                    <div
+                            :ref="(el) => setChartRef(index, el, 'bar')"
+                            class="chart-item bar-chart"
+                            style="width: 100%; height: 500px;"
+                    ></div>
+
+                    <!-- 饼图容器 -->
+                    <div class="pie-container" style="display: flex; gap: 20px; width: 100%;">
+                      <!-- 饼图1 -->
+                      <div
+                              :ref="(el) => setChartRef(index, el, 'pie1')"
+                              class="chart-item pie-chart"
+                              style="width: 50%; height: 350px;"
+                      ></div>
+
+                      <!-- 饼图2 -->
+                      <div
+                              :ref="(el) => setChartRef(index, el, 'pie2')"
+                              class="chart-item pie-chart"
+                              style="width: 50%; height: 350px;"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else>
+                  {{ message.content }}
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </a-layout-content>
+
+      <!-- 输入框区域 -->
+      <a-layout-footer style="padding: 0; background: transparent; margin-left: 10%;">
+        <a-radio-group v-model:value="selectedOption" style="margin-bottom: 10px; margin-left: 10%; position: relative; left: -200px;">
+          <a-radio value="智能问答">智能问答</a-radio>
+          <a-radio value="数据库查询">数据库查询</a-radio>
+          <a-radio value="调度系统">调度系统</a-radio>
+        </a-radio-group>
+        <div style="display: flex; align-items: center;">
+          <a-input
+                  v-model:value="inputValue"
+                  placeholder="请输入问题"
+                  @pressEnter="handleSend"
+                  style="border-radius: 20px;"
+          >
+            <template #suffix>
+              <a-button type="primary" @click="handleSend">发送</a-button>
+            </template>
+          </a-input>
+          <a-button @click="handleVoiceInput" style="margin-left: 10px;">语音</a-button>
+        </div>
+      </a-layout-footer>
+    </a-layout>
+  </a-layout>
+</template>
+<script setup>
+  import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue';
+  import { Spin, Button, List, Radio } from 'ant-design-vue';
+  import * as echarts from 'echarts';
+
+  const selectedOption = ref('智能问答'); // 默认选中“智能问答”
+
+  const messages = ref([]);
+  const inputValue = ref('');
+  const tableData = ref([
+    { key: '1', name: '张三', age: 32, score: 85 },
+    { key: '2', name: '李四', age: 28, score: 92 },
+    { key: '3', name: '王五', age: 45, score: 78 },
+  ]);
+  const tableColumns = ref([
+    { title: '姓名', dataIndex: 'name', key: 'name' },
+    { title: '年龄', dataIndex: 'age', key: 'age' },
+    { title: '分数', dataIndex: 'score', key: 'score' },
+  ]);
+
+  // 历史对话列表
+  const conversations = ref([]);
+
+  // 图表相关引用
+  const chartRefs = ref({});
+  const chartInstances = ref({});
+
+  // 设置图表容器引用
+  const setChartRef = (index, el, chartType) => {
+    if (el) {
+      chartRefs.value[`${index}-${chartType}`] = el;
+    }
+  };
+
+  // 处理发送消息
+  const handleSend = async () => {
+    if (!inputValue.value.trim()) return;
+
+    messages.value.push({
+      role: 'user',
+      content: inputValue.value,
+      isLoading: false
+    });
+
+    messages.value.push({
+      role: 'assistant',
+      content: '',
+      isLoading: true
+    });
+
+    const currentIndex = messages.value.length - 1;
+    const userInput = inputValue.value;
+    inputValue.value = '';
+
+    setTimeout(async () => {
+      let response = '';
+      switch (selectedOption.value) {
+        case '智能问答':
+          response = '这是智能问答的输出';
+          break;
+        case '数据库查询':
+          response = userInput === '1' ? '1' : `这是对 "${userInput}" 的回答`;
+          break;
+        case '调度系统':
+          response = '这是调度系统的输出';
+          break;
+        default:
+          response = '未知选项';
+      }
+
+      messages.value[currentIndex] = {
+        ...messages.value[currentIndex],
+        content: response,
+        isLoading: false
+      };
+
+      if (response === '1') {
+        nextTick(() => {
+          renderCharts(currentIndex);
+        });
+      }
+    }, 1000);
+  };
+
+  // 生成饼图数据
+  const generatePieData = () => {
+    // 年龄分布数据
+    const ageData = [
+      { value: tableData.value.filter(item => item.age < 30).length, name: '30岁以下' },
+      { value: tableData.value.filter(item => item.age >= 30 && item.age < 40).length, name: '30-39岁' },
+      { value: tableData.value.filter(item => item.age >= 40).length, name: '40岁及以上' }
+    ];
+
+    // 分数段分布数据
+    const scoreData = [
+      { value: tableData.value.filter(item => item.score >= 90).length, name: '优秀（≥90）' },
+      { value: tableData.value.filter(item => item.score >= 80 && item.score < 90).length, name: '良好（80-89）' },
+      { value: tableData.value.filter(item => item.score < 80).length, name: '及格（<80）' }
+    ];
+
+    return { ageData, scoreData };
+  };
+
+  // 渲染所有图表
+  const renderCharts = (index) => {
+    nextTick(() => {
+      // 渲染柱状图
+      renderBarChart(index);
+      // 渲染饼图
+      renderPieCharts(index);
+    });
+  };
+
+  // 渲染柱状图
+  const renderBarChart = (index) => {
+    const container = chartRefs.value[`${index}-bar`];
+    if (!container) return;
+
+    if (chartInstances.value[`${index}-bar`]) {
+      chartInstances.value[`${index}-bar`].dispose();
+    }
+
+    try {
+      const chartInstance = echarts.init(container);
+      chartInstances.value[`${index}-bar`] = chartInstance;
+
+      const names = tableData.value.map(item => item.name);
+      const scores = tableData.value.map(item => item.score);
+
+      const option = {
+        title: { text: '分数柱状图', left: 'center' },
+        tooltip: { trigger: 'axis' },
+        xAxis: {
+          type: 'category',
+          data: names,
+          axisLabel: { rotate: 45 }
+        },
+        yAxis: { type: 'value', name: '分数' },
+        series: [{
+          name: '分数',
+          type: 'bar',
+          data: scores,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#83bff6' },
+              { offset: 0.5, color: '#188df0' },
+              { offset: 1, color: '#188df0' }
+            ])
+          }
+        }]
+      };
+
+      chartInstance.setOption(option);
+    } catch (error) {
+      console.error('柱状图初始化失败:', error);
+    }
+  };
+
+  // 渲染饼图
+  const renderPieCharts = (index) => {
+    const { ageData, scoreData } = generatePieData();
+
+    // 渲染年龄分布饼图
+    renderPieChart(index, 'pie1', '年龄分布', ageData, ['#37A2FF', '#32C5E9', '#67E0E3']);
+    // 渲染分数分布饼图
+    renderPieChart(index, 'pie2', '分数分布', scoreData, ['#FF9F7F', '#FAC858', '#91CC75']);
+  };
+
+  const renderPieChart = (index, chartType, title, data, colors) => {
+    const container = chartRefs.value[`${index}-${chartType}`];
+    if (!container) return;
+
+    if (chartInstances.value[`${index}-${chartType}`]) {
+      chartInstances.value[`${index}-${chartType}`].dispose();
+    }
+
+    try {
+      const chartInstance = echarts.init(container);
+      chartInstances.value[`${index}-${chartType}`] = chartInstance;
+
+      const option = {
+        title: { text: title, left: 'center' },
+        tooltip: { trigger: 'item' },
+        color: colors,
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          data: data,
+          label: {
+            formatter: '{b}: {d}%'
+          },
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          }
+        }]
+      };
+
+      chartInstance.setOption(option);
+    } catch (error) {
+      console.error(`${title}饼图初始化失败:`, error);
+    }
+  };
+
+  // 组件卸载时清理
+  onBeforeUnmount(() => {
+    Object.values(chartInstances.value).forEach(instance => {
+      if (instance && instance.dispose) {
+        instance.dispose();
+      }
+    });
+  });
+
+  onMounted(() => {
+
+  });
+
+  // 空的语音输入处理函数
+  const handleVoiceInput = () => {
+    // 语音输入功能待实现
+  };
+</script>
+<style scoped>
+  .message-box {
+    margin-bottom: 20px;
+  }
+  .fixed-tag {
+    font-size: 30px;
+  }
+
+  .message-content {
+    padding: 15px 25px;
+    border-radius: 20px;
+    position: relative;
+    min-height: 40px;
+    transition: all 0.3s ease;
+    font-size: 20px;
+  }
+
+  .user-message {
+    background-color: #1890ff;
+    color: white;
+    margin-left: auto;
+    margin-right: 10%;
+    width: fit-content;
+    display: flex;
+  }
+
+.assistant-message {
+  background-color: #ffffff; /* 背景改为白色 */
+  color: #333333; /* 文字颜色改为深色 */
+  margin-right: auto;
+  margin-left: 10%;
+  border: 1px solid #e8e8e8; /* 添加边框以增强视觉效果 */
+  max-width: 80%;
+}
+.other-message{
+    display: flex;
+    width: fit-content;
+}
+.database-message{
+
+}
+  .loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 40px;
+  }
+/* 确保图表容器在不同屏幕尺寸下表现良好 */
+.charts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.bar-chart {
+  width: 100%;
+  height: 500px;
+}
+
+.pie-container {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+}
+
+.pie-chart {
+  width: 50%; /* 每个饼图占据一半宽度 */
+  height: 350px;
+}
+
+/* 在小屏幕设备上调整布局 */
+@media (max-width: 768px) {
+  .pie-container {
+    flex-direction: column; /* 将饼图堆叠显示 */
+  }
+
+  .pie-chart {
+    width: 100%; /* 单独一行时宽度占满 */
+    height: 300px; /* 调整高度以适应小屏幕 */
+  }
+}
+
+  .chart-item {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 15px;
+  }
+
+  /* 滚动条样式 */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+
+  .ant-btn-block {
+    margin-bottom: 20px;
+  }
+
+  /* 单选按钮样式 */
+  .ant-radio-wrapper {
+    margin-right: 20px;
+  }
+</style>
+
+
+
